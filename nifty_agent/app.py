@@ -118,6 +118,10 @@ def show(df: pd.DataFrame, height=None):
     if cols:
         sty = sty.map(lambda v: "color:#1B7F3B" if isinstance(v, (int, float)) and v > 0 else
                       "color:#C0392B" if isinstance(v, (int, float)) and v < 0 else "", subset=cols)
+    sig = [c for c in ("ST signal", "ST 5-min") if c in df.columns]
+    if sig:
+        sty = sty.map(lambda v: "color:#1B7F3B;font-weight:600" if str(v).startswith("Buy") else
+                      "color:#C0392B;font-weight:600" if str(v).startswith("Sell") else "", subset=sig)
     st.dataframe(sty, width="stretch", hide_index=True, **({"height": height} if height else {}))
 
 
@@ -144,13 +148,15 @@ with tabs[2]:
     st.markdown("**Review / avoid**")
     show(R["lt_avoid"].reset_index())
 with tabs[3]:
-    st.caption("LTP = last traded price · LCP = previous close · Chg % vs yesterday · 2D % vs 2 sessions ago · 1W % vs 5 sessions ago")
+    st.caption("LTP = last traded price · LCP = previous close · Chg % vs yesterday · 2D % vs 2 sessions ago · "
+               "1W % vs 5 sessions ago · EMA20/EMA50 = 20/50-day exponential moving averages · "
+               "SuperTrend (10, 3) on daily candles — Buy when price is above it; '(new)' = flipped today")
     q = st.text_input("Filter by ticker or sector", "")
     b = R["board"].reset_index()
     if q:
         b = b[b.apply(lambda r: q.lower() in f"{r.Ticker} {r.Sector}".lower(), axis=1)]
     show(b[["Ticker", "Sector", "LTP", "LCP", "Open", "Day High", "Day Low", "Chg %", "2D %", "1W %",
-            "Volume", "Exp. move % (global)"]], height=640)
+            "EMA20", "EMA50", "SuperTrend", "ST signal", "Volume", "Exp. move % (global)"]], height=640)
 with tabs[4]:
     st.caption("Weight = how much each market counts at this time of the Indian day. Impact = its push on Indian stocks.")
     show(R["snap"].sort_values("Weight", ascending=False).reset_index().drop(columns=["Z"]), height=600)

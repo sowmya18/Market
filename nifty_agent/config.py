@@ -3,6 +3,7 @@
 Edit this file to change the stock universe, global drivers, session weights,
 capital/risk settings and how many picks to show.
 """
+import os
 
 # ---------------------------------------------------------------------------
 # Stock universe: Nifty 50 (Yahoo Finance tickers -> sector).
@@ -120,5 +121,5 @@ CAPITAL_INR = 100_000      # used only to suggest position size
 RISK_PER_TRADE_PCT = 1.0   # % of capital risked between entry and stop-loss
 MIN_AVG_TURNOVER_CR = 50   # skip stocks with avg daily turnover below this (Rs crore)
 
-REPORT_DIR = "reports"
+REPORT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reports")  # works from any folder
 LLM_MODEL = "claude-sonnet-5-5"   # used only with --llm and ANTHROPIC_API_KEY set

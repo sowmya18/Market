@@ -55,6 +55,20 @@ def intraday_scores(daily, intraday, sens, gscore, regime, session):
 
         price, relvol = last.Close, 1.0
         idf = intraday.get(t)
+        st5 = None
+        if session != "pre_open" and idf is not None and len(idf) > 20:
+            from indicators import supertrend
+            line5, dir5 = supertrend(idf, 10, 3.0)
+            st5 = ("Buy" if dir5.iloc[-1] > 0 else "Sell")
+            s += 1.0 * dir5.iloc[-1]
+            if (dir5.tail(3) != dir5.iloc[-1]).any():
+                s += 0.5 * dir5.iloc[-1]; why.append(f"5-min SuperTrend just turned {st5.lower()}")
+            else:
+                why.append(f"{'above' if dir5.iloc[-1] > 0 else 'below'} 5-min SuperTrend")
+        else:
+            s += 0.5 * last.STdir
+            if last.STflip:
+                why.append(f"daily SuperTrend turned {'buy' if last.STdir > 0 else 'sell'}")
         if session != "pre_open" and idf is not None and len(idf):
             today = idf[idf.index.date == idf.index[-1].date()]
             if len(today) >= 3:
@@ -80,7 +94,8 @@ def intraday_scores(daily, intraday, sens, gscore, regime, session):
         stop, tgt, tgt2, qty = _levels(side, price, last.ATR, 0.5, 0.8, regime["size_mult"])
         rows.append({"Ticker": t.replace(".NS", ""), "Score": round(s, 2), "Price": round(price, 2),
                      "Stop": stop, "Target 1": tgt, "Target 2": tgt2, "Qty": qty,
-                     "RSI": round(last.RSI, 1), "Reasons": ", ".join(why) or "trend/RSI"})
+                     "RSI": round(last.RSI, 1), "ST 5-min": st5 or "–",
+                     "Reasons": ", ".join(why) or "trend/RSI"})
     return pd.DataFrame(rows)
 
 
@@ -98,6 +113,16 @@ def swing_scores(daily, nifty, gscore, regime):
         elif l.Close < l.EMA20 < l.EMA50:
             s -= 2; why.append("price < EMA20 < EMA50")
         s += 1 if l.EMA50 > l.EMA200 else -1
+        s += 1.5 * l.STdir
+        if l.STflip:
+            s += 1.0 * l.STdir
+            why.append(f"SuperTrend turned {'BUY' if l.STdir > 0 else 'SELL'} today")
+        else:
+            why.append(f"{'above' if l.STdir > 0 else 'below'} SuperTrend")
+        if l.EMA20 > l.EMA50 and p.EMA20 <= p.EMA50:
+            s += 1; why.append("EMA20 crossed above EMA50")
+        elif l.EMA20 < l.EMA50 and p.EMA20 >= p.EMA50:
+            s -= 1; why.append("EMA20 crossed below EMA50")
         if 50 <= l.RSI <= 68:
             s += 1; why.append(f"RSI {l.RSI:.0f} healthy")
         elif l.RSI > 75:
@@ -127,7 +152,8 @@ def swing_scores(daily, nifty, gscore, regime):
         stop, tgt, tgt2, qty = _levels(side, l.Close, l.ATR, 1.5, 2.5, regime["size_mult"])
         rows.append({"Ticker": t.replace(".NS", ""), "Score": round(s, 2), "Price": round(l.Close, 2),
                      "Stop": stop, "Target 1": tgt, "Target 2": tgt2, "Qty": qty,
-                     "RSI": round(l.RSI, 1), "Hold": "3–15 days", "Reasons": ", ".join(why)})
+                     "RSI": round(l.RSI, 1), "Hold": "3–15 days",
+                     "Reasons": ", ".join(why)})
     return pd.DataFrame(rows)
 
 
@@ -146,6 +172,7 @@ def longterm_scores(daily, fundamentals=None):
             "sma200_slope": l.SMA200 / df["SMA200"].iloc[-21] - 1,
             "vol": df["Ret"].tail(252).std() * np.sqrt(252),
             "dd_52w": l.Close / l.High52w - 1,
+            "st_up": float(l.STdir > 0),
             "Price": l.Close,
         })
     d = pd.DataFrame(rows).set_index("Ticker")
@@ -153,7 +180,7 @@ def longterm_scores(daily, fundamentals=None):
         return d
     rank = lambda s, asc=True: s.rank(pct=True, ascending=asc)
     score = (0.35 * rank(d.mom_12_1) + 0.15 * d.above_200 + 0.15 * rank(d.sma200_slope)
-             + 0.15 * rank(d.vol, asc=False) + 0.05 * rank(d.dd_52w))
+             + 0.15 * rank(d.vol, asc=False) + 0.05 * rank(d.dd_52w)) - 0.05 + 0.05 * d.st_up
     if fundamentals:
         f = pd.DataFrame(fundamentals).T.reindex(d.index).astype(float)
         d = d.join(f)

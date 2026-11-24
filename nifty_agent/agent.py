@@ -49,7 +49,7 @@ def load_universe(path: str | None, extra: list[str] | None = None) -> dict[str,
     return uni
 
 
-QUOTE_COLS = ["LTP", "LCP", "Open", "Chg %", "2D %", "1W %"]
+QUOTE_COLS = ["LTP", "LCP", "Open", "Chg %", "2D %", "1W %", "EMA20", "EMA50", "SuperTrend", "ST signal"]
 
 
 def with_quotes(df: pd.DataFrame, board: pd.DataFrame) -> pd.DataFrame:
@@ -161,7 +161,7 @@ def run(session: str | None, demo=False, fundamentals=False, llm=False, telegram
                    else "Uses live VWAP, 15-min opening range and volume._"),
                 md(ib), f"### Intraday – top {config.TOP_N_SELL} sell / short candidates", md(is_)]
     out += [f"## 3. Swing (3–15 days) – top {config.TOP_N_BUY} buy candidates",
-            "_Stop 1.5×ATR below close, targets 2.5× / 5×ATR. Enter near listed price, skip if it gaps far above._",
+            "_Stop 1.5×ATR below close, targets 2.5× / 5×ATR. Once in profit, the SuperTrend line works as a trailing stop. Skip if it gaps far above the listed price._",
             md(sb), f"### Swing – top {config.TOP_N_SELL} sell / avoid candidates", md(ss),
             f"## 4. Long term (1 year+) – top {config.TOP_N_BUY} accumulate candidates",
             "_Ranked on 12-month momentum, 200-DMA trend, low volatility"
@@ -170,8 +170,10 @@ def run(session: str | None, demo=False, fundamentals=False, llm=False, telegram
             md(lt_buy, ".1f"), "### Long term – review / avoid", md(lt_avoid, ".1f"),
             "## 5. Price board – Nifty 50 + your extra stocks (sorted by today's change)",
             "_LTP = last traded price · LCP = last (previous) closing price · Chg % vs yesterday's close · "
-            "2D % vs close 2 sessions ago · 1W % vs close 5 sessions ago._",
-            md(board[["Sector", "LTP", "LCP", "Open", "Day High", "Day Low", "Chg %", "2D %", "1W %"]])]
+            "2D % vs close 2 sessions ago · 1W % vs close 5 sessions ago · EMA20/EMA50 = 20/50-day "
+            "exponential moving averages · SuperTrend (10, 3) on daily candles: Buy when price is above it._",
+            md(board[["Sector", "LTP", "LCP", "Open", "Day High", "Day Low", "Chg %", "2D %", "1W %",
+                       "EMA20", "EMA50", "SuperTrend", "ST signal"]])]
 
     summary = {"session": session, "global_score": round(gscore, 2), "global_label": glabel,
                "regime": {k: (round(v, 2) if isinstance(v, float) else v) for k, v in regime.items()},
