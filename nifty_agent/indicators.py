@@ -30,6 +30,27 @@ def atr(df: pd.DataFrame, n: int = 14) -> pd.Series:
     return tr.ewm(alpha=1 / n, adjust=False).mean()
 
 
+def supertrend(df: pd.DataFrame, n: int = 10, mult: float = 3.0):
+    """SuperTrend (default 10, 3). Returns (line, direction) where direction is
+    +1 = Buy (price above the line) and -1 = Sell (price below the line)."""
+    a = atr(df, n).values
+    hl2 = ((df["High"] + df["Low"]) / 2).values
+    c = df["Close"].values
+    ub, lb = hl2 + mult * a, hl2 - mult * a
+    fub, flb = ub.copy(), lb.copy()
+    d = np.ones(len(df))
+    line = np.full(len(df), np.nan)
+    for i in range(1, len(df)):
+        fub[i] = ub[i] if (ub[i] < fub[i - 1] or c[i - 1] > fub[i - 1]) else fub[i - 1]
+        flb[i] = lb[i] if (lb[i] > flb[i - 1] or c[i - 1] < flb[i - 1]) else flb[i - 1]
+        if d[i - 1] == 1:
+            d[i] = -1 if c[i] < flb[i] else 1
+        else:
+            d[i] = 1 if c[i] > fub[i] else -1
+        line[i] = flb[i] if d[i] == 1 else fub[i]
+    return pd.Series(line, index=df.index), pd.Series(d, index=df.index)
+
+
 def vwap(df: pd.DataFrame) -> pd.Series:
     """Session VWAP for intraday bars (resets each day)."""
     tp = (df["High"] + df["Low"] + df["Close"]) / 3
@@ -48,6 +69,8 @@ def add_daily_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df["RSI"] = rsi(c)
     df["MACD"], df["MACDsig"], df["MACDhist"] = macd(c)
     df["ATR"] = atr(df)
+    df["ST"], df["STdir"] = supertrend(df, 10, 3.0)
+    df["STflip"] = df["STdir"] != df["STdir"].shift()
     df["VolAvg20"] = df["Volume"].rolling(20).mean()
     df["High20"] = df["High"].rolling(20).max()
     df["Low20"] = df["Low"].rolling(20).min()
@@ -85,5 +108,10 @@ def price_board(daily: dict, intraday: dict | None = None, names: dict | None = 
         if len(df) < 6:
             continue
         q = quote(df, (intraday or {}).get(t))
-        rows.append({"Ticker": t.replace(".NS", ""), **({"Sector": names.get(t, "")} if names else {}), **q})
+        last = df.iloc[-1]
+        tech = {}
+        if "EMA20" in df:
+            tech = {"EMA20": last["EMA20"], "EMA50": last["EMA50"], "SuperTrend": last["ST"],
+                    "ST signal": ("Buy" if last["STdir"] > 0 else "Sell") + (" (new)" if last["STflip"] else "")}
+        rows.append({"Ticker": t.replace(".NS", ""), **({"Sector": names.get(t, "")} if names else {}), **q, **tech})
     return pd.DataFrame(rows).set_index("Ticker")
