@@ -65,6 +65,8 @@ def add_daily_indicators(df: pd.DataFrame) -> pd.DataFrame:
     c = df["Close"]
     for n in (9, 20, 21, 50, 200):
         df[f"EMA{n}"] = ema(c, n)
+    df["SMA20"] = c.rolling(20).mean()
+    df["SMA50"] = c.rolling(50).mean()
     df["SMA200"] = c.rolling(200, min_periods=120).mean()
     df["RSI"] = rsi(c)
     df["MACD"], df["MACDsig"], df["MACDhist"] = macd(c)

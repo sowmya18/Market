@@ -115,6 +115,14 @@ SCHEDULE_IST = {
 # ---------------------------------------------------------------------------
 # Output & risk settings
 # ---------------------------------------------------------------------------
+# 20/50 moving-average crossover screen. The more stocks you scan, the more crosses you find:
+# use --universe with the official Nifty 100 or Nifty 200 list from niftyindices.com to widen it.
+CROSS_MA_TYPE = "EMA"          # "EMA" (exponential) or "SMA" (simple)
+CROSS_FAST, CROSS_SLOW = 20, 50
+CROSS_LOOKBACK_DAYS = 10       # a cross within this many sessions counts as "recent"
+CROSS_NEAR_PCT = 1.0           # "about to cross" when the two averages are within this % of each other
+TOP_N_CROSS = 10
+
 TOP_N_BUY = 10
 TOP_N_SELL = 5
 CAPITAL_INR = 100_000      # used only to suggest position size

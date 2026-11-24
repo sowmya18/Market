@@ -113,7 +113,7 @@ def show(df: pd.DataFrame, height=None):
         return
     df = df.copy()
     num = df.select_dtypes("number").columns
-    sty = df.style.format({c: ("{:,.0f}" if c in ("Qty", "Volume") else "{:,.2f}") for c in num}, na_rep="–")
+    sty = df.style.format({c: ("{:,.0f}" if c in ("Qty", "Volume", "Days ago") else "{:,.2f}") for c in num}, na_rep="–")
     cols = [c for c in PCT if c in df.columns]
     if cols:
         sty = sty.map(lambda v: "color:#1B7F3B" if isinstance(v, (int, float)) and v > 0 else
@@ -125,8 +125,8 @@ def show(df: pd.DataFrame, height=None):
     st.dataframe(sty, width="stretch", hide_index=True, **({"height": height} if height else {}))
 
 
-tabs = st.tabs(["⚡ Intraday", "📈 Swing", "🏦 Long term", "💹 Price board", "🌍 Global markets",
-                "🔗 Nifty vs global", "📁 Scheduled reports"])
+tabs = st.tabs(["⚡ Intraday", "📈 Swing", "🏦 Long term", "✂️ 20/50 Crossover", "💹 Price board",
+                "🌍 Global markets", "🔗 Nifty vs global", "📁 Scheduled reports"])
 
 with tabs[0]:
     if R["session"] == "post_close":
@@ -148,6 +148,22 @@ with tabs[2]:
     st.markdown("**Review / avoid**")
     show(R["lt_avoid"].reset_index())
 with tabs[3]:
+    xname = f"{config.CROSS_MA_TYPE} {config.CROSS_FAST}/{config.CROSS_SLOW}"
+    st.caption(f"Stocks whose {config.CROSS_FAST}-day {config.CROSS_MA_TYPE} crossed the {config.CROSS_SLOW}-day "
+               f"{config.CROSS_MA_TYPE} in the last {config.CROSS_LOOKBACK_DAYS} sessions, ranked by how fresh the "
+               "cross is, volume on the cross day, gap between the averages, SuperTrend agreement and RSI. "
+               "Stop = lower of the 50-day average and SuperTrend.")
+    a, b_, c = st.columns(3)
+    a.metric("Bullish crosses", len(R["x_bull"]))
+    b_.metric("Bearish crosses", len(R["x_bear"]))
+    c.metric("About to cross", len(R["x_near"]))
+    st.markdown(f"**Top {config.TOP_N_CROSS} bullish — 20 crossed ABOVE 50**")
+    show(R["x_bull"])
+    st.markdown(f"**Top {config.TOP_N_CROSS} bearish — 20 crossed BELOW 50**")
+    show(R["x_bear"])
+    st.markdown(f"**About to cross** — averages within {config.CROSS_NEAR_PCT}% of each other and closing in")
+    show(R["x_near"])
+with tabs[4]:
     st.caption("LTP = last traded price · LCP = previous close · Chg % vs yesterday · 2D % vs 2 sessions ago · "
                "1W % vs 5 sessions ago · EMA20/EMA50 = 20/50-day exponential moving averages · "
                "SuperTrend (10, 3) on daily candles — Buy when price is above it; '(new)' = flipped today")
@@ -157,15 +173,15 @@ with tabs[3]:
         b = b[b.apply(lambda r: q.lower() in f"{r.Ticker} {r.Sector}".lower(), axis=1)]
     show(b[["Ticker", "Sector", "LTP", "LCP", "Open", "Day High", "Day Low", "Chg %", "2D %", "1W %",
             "EMA20", "EMA50", "SuperTrend", "ST signal", "Volume", "Exp. move % (global)"]], height=640)
-with tabs[4]:
+with tabs[5]:
     st.caption("Weight = how much each market counts at this time of the Indian day. Impact = its push on Indian stocks.")
     show(R["snap"].sort_values("Weight", ascending=False).reset_index().drop(columns=["Z"]), height=600)
-with tabs[5]:
+with tabs[6]:
     st.markdown("**How Nifty has moved with each market (last 120 sessions)**")
     show(R["nvg"].reset_index())
     st.markdown("**Stocks most exposed to today's global cue**")
     show(R["movers"].reset_index())
-with tabs[6]:
+with tabs[7]:
     files = sorted(glob.glob(os.path.join(config.REPORT_DIR, "*.md")), reverse=True)
     if not files:
         st.write("_No scheduled reports yet. Once the GitHub schedule is set up (DEPLOY.md), each run's "
@@ -183,7 +199,9 @@ write_excel(buf, [
     ("Nifty 50 Prices", R["board"].reset_index()), ("Global Markets", R["snap"].reset_index()),
     ("Intraday", with_quotes(R["intra"].sort_values("Score", ascending=False), R["board"])),
     ("Swing", with_quotes(R["swing"].sort_values("Score", ascending=False), R["board"])),
-    ("Long Term", R["lt"].reset_index()), ("Nifty vs Global", R["nvg"].reset_index()),
+    ("Long Term", R["lt"].reset_index()),
+    ("20-50 Crossover", pd.concat([R["x_bull"], R["x_bear"]], ignore_index=True)),
+    ("About to cross", R["x_near"]), ("Nifty vs Global", R["nvg"].reset_index()),
     ("Sensitivity", R["sens"].reset_index())])
 st.sidebar.download_button("⬇ Download this run (Excel)", buf.getvalue(),
                            f"nifty_agent_{R['now']:%Y-%m-%d_%H%M}_{R['session']}.xlsx", width="stretch")
