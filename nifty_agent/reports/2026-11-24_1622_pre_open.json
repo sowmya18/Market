@@ -1,0 +1,71 @@
+{
+  "session": "pre_open",
+  "global_score": 0.91,
+  "global_label": "Strongly positive",
+  "regime": {
+    "Nifty": 25349.65,
+    "Nifty 1d %": -1.75,
+    "Trend": "Sideways",
+    "SMA50": 23520.1,
+    "SMA200": 23997.45,
+    "India VIX": 17.7,
+    "Risk": "Normal volatility",
+    "size_mult": 1.0
+  },
+  "top_global": {
+    "S&P 500": 4.73,
+    "Nasdaq": 6.51,
+    "S&P fut": -0.66,
+    "Nikkei 225": 3.91,
+    "Hang Seng": -0.73,
+    "Brent crude": -2.79
+  },
+  "intraday_buy": [
+    "SHRIRAMFIN",
+    "INDIGO",
+    "EICHERMOT",
+    "BSE",
+    "BAJFINANCE",
+    "ADANIPORTS",
+    "ETERNAL",
+    "MARUTI",
+    "ULTRACEMCO",
+    "BAJAJFINSV"
+  ],
+  "intraday_sell": [
+    "COALINDIA",
+    "TATASTEEL",
+    "INFY"
+  ],
+  "swing_buy": [
+    "APOLLOHOSP",
+    "BSE",
+    "LT",
+    "BAJFINANCE",
+    "INDIGO",
+    "ULTRACEMCO",
+    "AXISBANK",
+    "ICICIBANK",
+    "ADANIPORTS",
+    "BHARTIARTL"
+  ],
+  "swing_sell": [
+    "HINDALCO",
+    "TATASTEEL",
+    "ONGC",
+    "COALINDIA",
+    "TMPV"
+  ],
+  "longterm": [
+    "KOTAKBANK",
+    "APOLLOHOSP",
+    "BAJAJ-AUTO",
+    "TITAN",
+    "ADANIPORTS",
+    "TECHM",
+    "ICICIBANK",
+    "SUNPHARMA",
+    "GRASIM",
+    "BSE"
+  ]
+}
