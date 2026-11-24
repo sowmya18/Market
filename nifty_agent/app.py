@@ -30,6 +30,8 @@ with st.sidebar:
     session_label = st.selectbox("Session", list(SESSION_NAMES))
     extra_txt = st.text_input("Extra NSE stocks (comma separated)", "",
                               help="Added on top of the Nifty 50 and EXTRA_STOCKS in config.py, e.g. ACC, SHREECEM")
+    price_cap = st.number_input("“Under ₹” tab: show stocks with LTP below (₹)", min_value=10,
+                                max_value=100000, value=config.PRICE_CAP_INR, step=50)
     fundamentals = st.checkbox("Include fundamentals in long-term ranking (slower)", False)
     auto_sched = st.checkbox("Auto-run at scheduled times", True,
                              help="Runs at " + ", ".join(config.SCHEDULE_IST) + " IST, Mon–Fri, while this page is open")
@@ -104,7 +106,8 @@ c3.metric("Trend", reg["Trend"], f"50-DMA {reg['SMA50']:,.0f}", delta_color="off
 c4.metric("India VIX", f"{reg['India VIX']:.1f}", reg["Risk"], delta_color="off")
 st.info(f"**Stance:** {stance(R['gscore'], reg)}")
 
-PCT = ["Chg %", "2D %", "1W %", "Score", "Impact", "Expected move %", "Exp. move % (global)"]
+PCT = ["Chg %", "2D %", "1W %", "Score", "Impact", "Expected move %", "Exp. move % (global)",
+       "Swing score", "Intraday score"]
 
 
 def show(df: pd.DataFrame, height=None):
@@ -118,15 +121,15 @@ def show(df: pd.DataFrame, height=None):
     if cols:
         sty = sty.map(lambda v: "color:#1B7F3B" if isinstance(v, (int, float)) and v > 0 else
                       "color:#C0392B" if isinstance(v, (int, float)) and v < 0 else "", subset=cols)
-    sig = [c for c in ("ST signal", "ST 5-min") if c in df.columns]
+    sig = [c for c in ("ST signal", "ST 5-min", "Setup") if c in df.columns]
     if sig:
-        sty = sty.map(lambda v: "color:#1B7F3B;font-weight:600" if str(v).startswith("Buy") else
-                      "color:#C0392B;font-weight:600" if str(v).startswith("Sell") else "", subset=sig)
+        sty = sty.map(lambda v: "color:#1B7F3B;font-weight:600" if str(v).startswith(("Buy", "Bullish")) else
+                      "color:#C0392B;font-weight:600" if str(v).startswith(("Sell", "Bearish")) else "", subset=sig)
     st.dataframe(sty, width="stretch", hide_index=True, **({"height": height} if height else {}))
 
 
-tabs = st.tabs(["⚡ Intraday", "📈 Swing", "🏦 Long term", "✂️ 20/50 Crossover", "💹 Price board",
-                "🌍 Global markets", "🔗 Nifty vs global", "📁 Scheduled reports"])
+tabs = st.tabs(["⚡ Intraday", "📈 Swing", "🏦 Long term", "✂️ 20/50 Crossover", f"🪙 Under ₹{price_cap:,}",
+                "💹 Price board", "🌍 Global markets", "🔗 Nifty vs global", "📁 Scheduled reports"])
 
 with tabs[0]:
     if R["session"] == "post_close":
@@ -164,6 +167,19 @@ with tabs[3]:
     st.markdown(f"**About to cross** — averages within {config.CROSS_NEAR_PCT}% of each other and closing in")
     show(R["x_near"])
 with tabs[4]:
+    cheap = R["allstocks"][R["allstocks"]["LTP"] < price_cap].reset_index()
+    st.caption(f"Every scanned stock (Nifty 50 + your extra stocks) with LTP below ₹{price_cap:,}, sorted by swing "
+               "score. Setup: Bullish when swing score ≥ +3, Bearish when ≤ −3. Change the price limit in the sidebar.")
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Stocks under the limit", len(cheap))
+    k2.metric("Bullish setups", int((cheap.Setup == "Bullish setup").sum()) if len(cheap) else 0)
+    k3.metric("Bearish setups", int((cheap.Setup == "Bearish setup").sum()) if len(cheap) else 0)
+    k4.metric("SuperTrend Buy", int(cheap["ST signal"].str.startswith("Buy").sum()) if len(cheap) else 0)
+    only = st.radio("Show", ["All", "Bullish setups", "Bearish setups"], horizontal=True)
+    if only != "All" and len(cheap):
+        cheap = cheap[cheap.Setup == only[:-1]]
+    show(cheap)
+with tabs[5]:
     st.caption("LTP = last traded price · LCP = previous close · Chg % vs yesterday · 2D % vs 2 sessions ago · "
                "1W % vs 5 sessions ago · EMA20/EMA50 = 20/50-day exponential moving averages · "
                "SuperTrend (10, 3) on daily candles — Buy when price is above it; '(new)' = flipped today")
@@ -173,15 +189,15 @@ with tabs[4]:
         b = b[b.apply(lambda r: q.lower() in f"{r.Ticker} {r.Sector}".lower(), axis=1)]
     show(b[["Ticker", "Sector", "LTP", "LCP", "Open", "Day High", "Day Low", "Chg %", "2D %", "1W %",
             "EMA20", "EMA50", "SuperTrend", "ST signal", "Volume", "Exp. move % (global)"]], height=640)
-with tabs[5]:
+with tabs[6]:
     st.caption("Weight = how much each market counts at this time of the Indian day. Impact = its push on Indian stocks.")
     show(R["snap"].sort_values("Weight", ascending=False).reset_index().drop(columns=["Z"]), height=600)
-with tabs[6]:
+with tabs[7]:
     st.markdown("**How Nifty has moved with each market (last 120 sessions)**")
     show(R["nvg"].reset_index())
     st.markdown("**Stocks most exposed to today's global cue**")
     show(R["movers"].reset_index())
-with tabs[7]:
+with tabs[8]:
     files = sorted(glob.glob(os.path.join(config.REPORT_DIR, "*.md")), reverse=True)
     if not files:
         st.write("_No scheduled reports yet. Once the GitHub schedule is set up (DEPLOY.md), each run's "
@@ -201,7 +217,9 @@ write_excel(buf, [
     ("Swing", with_quotes(R["swing"].sort_values("Score", ascending=False), R["board"])),
     ("Long Term", R["lt"].reset_index()),
     ("20-50 Crossover", pd.concat([R["x_bull"], R["x_bear"]], ignore_index=True)),
-    ("About to cross", R["x_near"]), ("Nifty vs Global", R["nvg"].reset_index()),
+    ("About to cross", R["x_near"]),
+    (f"Under Rs {price_cap}", R["allstocks"][R["allstocks"]["LTP"] < price_cap].reset_index()),
+    ("Nifty vs Global", R["nvg"].reset_index()),
     ("Sensitivity", R["sens"].reset_index())])
 st.sidebar.download_button("⬇ Download this run (Excel)", buf.getvalue(),
                            f"nifty_agent_{R['now']:%Y-%m-%d_%H%M}_{R['session']}.xlsx", width="stretch")
