@@ -28,7 +28,7 @@ import config
 from global_markets import (detect_session, global_score, global_snapshot, market_regime,
                             nifty_vs_global, stock_sensitivity)
 from indicators import add_daily_indicators, price_board
-from strategies import intraday_scores, longterm_scores, split, swing_scores
+from strategies import crossover_scan, intraday_scores, longterm_scores, split, swing_scores
 
 IST = ZoneInfo("Asia/Kolkata")
 DISCLAIMER = ("_Rules-based screen for research and education. Not investment advice and not a "
@@ -112,13 +112,18 @@ def compute(session: str | None = None, demo=False, fundamentals=False,
     lt_buy = lt[lt.View == "Accumulate on dips"].head(config.TOP_N_BUY)
     lt_avoid = lt[lt.View == "Review / avoid"].tail(config.TOP_N_SELL)
 
+    x_bull, x_bear, x_near = crossover_scan(daily)
+    qcols = ["LTP", "LCP", "Open", "Chg %", "2D %", "1W %", "ST signal"]
+    x_bull, x_bear = ((board[qcols].join(x.set_index("Ticker"), how="inner").loc[x.Ticker].reset_index()
+                       if not x.empty else x) for x in (x_bull, x_bear))
+
     sens_view = sens.sort_values("Expected move %")
     movers = pd.concat([sens_view.tail(5)[::-1], sens_view.head(5)])
     movers.index = movers.index.str.replace(".NS", "", regex=False)
     return dict(now=now, session=session, demo=demo, fundamentals=fundamentals, snap=snap,
                 gscore=gscore, glabel=glabel, regime=regime, nvg=nvg, sens=sens, intra=intra,
                 swing=swing, lt=lt, board=board, ib=ib, is_=is_, sb=sb, ss=ss, lt_buy=lt_buy,
-                lt_avoid=lt_avoid, movers=movers)
+                lt_avoid=lt_avoid, movers=movers, x_bull=x_bull, x_bear=x_bear, x_near=x_near)
 
 
 def stance(gscore, regime):
@@ -133,8 +138,10 @@ def run(session: str | None, demo=False, fundamentals=False, llm=False, telegram
         universe_path=None, extra=None) -> str:
     R = compute(session, demo, fundamentals, universe_path, extra)
     (now, session, snap, gscore, glabel, regime, nvg, sens, intra, swing, lt, board, ib, is_, sb, ss,
-     lt_buy, lt_avoid, movers) = (R[k] for k in ("now", "session", "snap", "gscore", "glabel", "regime",
-     "nvg", "sens", "intra", "swing", "lt", "board", "ib", "is_", "sb", "ss", "lt_buy", "lt_avoid", "movers"))
+     lt_buy, lt_avoid, movers, x_bull, x_bear, x_near) = (R[k] for k in ("now", "session", "snap", "gscore",
+     "glabel", "regime", "nvg", "sens", "intra", "swing", "lt", "board", "ib", "is_", "sb", "ss", "lt_buy",
+     "lt_avoid", "movers", "x_bull", "x_bear", "x_near"))
+    xname = f"{config.CROSS_MA_TYPE} {config.CROSS_FAST}/{config.CROSS_SLOW}"
 
     # ---------------------------------------------------------------- report
     title = {"pre_open": "Pre-open plan", "intraday": "Intraday update",
@@ -168,7 +175,13 @@ def run(session: str | None, demo=False, fundamentals=False, llm=False, telegram
             + (", ROE, debt, earnings growth and valuation" if fundamentals else
                " (run with --fundamentals to add ROE/debt/growth/PE)") + "._",
             md(lt_buy, ".1f"), "### Long term – review / avoid", md(lt_avoid, ".1f"),
-            "## 5. Price board – Nifty 50 + your extra stocks (sorted by today's change)",
+            f"## 5. {xname} crossover – top {config.TOP_N_CROSS} bullish (20 crossed ABOVE 50)",
+            f"_Crosses in the last {config.CROSS_LOOKBACK_DAYS} sessions, ranked by freshness, volume on the "
+            "cross day, gap between the averages, SuperTrend agreement and RSI. Stop = lower of the 50-day "
+            "average and SuperTrend._",
+            md(x_bull), f"### {xname} crossover – top {config.TOP_N_CROSS} bearish (20 crossed BELOW 50)", md(x_bear),
+            f"### About to cross (averages within {config.CROSS_NEAR_PCT}% and closing in)", md(x_near),
+            "## 6. Price board – Nifty 50 + your extra stocks (sorted by today's change)",
             "_LTP = last traded price · LCP = last (previous) closing price · Chg % vs yesterday's close · "
             "2D % vs close 2 sessions ago · 1W % vs close 5 sessions ago · EMA20/EMA50 = 20/50-day "
             "exponential moving averages · SuperTrend (10, 3) on daily candles: Buy when price is above it._",
@@ -182,7 +195,9 @@ def run(session: str | None, demo=False, fundamentals=False, llm=False, telegram
                "intraday_sell": is_.Ticker.tolist() if not is_.empty else [],
                "swing_buy": sb.Ticker.tolist() if not sb.empty else [],
                "swing_sell": ss.Ticker.tolist() if not ss.empty else [],
-               "longterm": lt_buy.index.tolist()}
+               "longterm": lt_buy.index.tolist(),
+               "cross_bullish": x_bull.Ticker.tolist() if not x_bull.empty else [],
+               "cross_bearish": x_bear.Ticker.tolist() if not x_bear.empty else []}
     if llm:
         out.insert(3, "### AI brief\n" + llm_brief(summary) + "\n")
     out += ["---", DISCLAIMER]
@@ -199,6 +214,8 @@ def run(session: str | None, demo=False, fundamentals=False, llm=False, telegram
             ("Intraday", with_quotes(intra.sort_values("Score", ascending=False), board)),
             ("Swing", with_quotes(swing.sort_values("Score", ascending=False), board)),
             ("Long Term", lt.reset_index()),
+            ("20-50 Crossover", pd.concat([x_bull, x_bear], ignore_index=True)),
+            ("About to cross", x_near),
             ("Nifty vs Global", nvg.reset_index()),
             ("Sensitivity", sens.reset_index())])
     with open(stem + ".json", "w") as f:
@@ -271,7 +288,9 @@ def send_telegram(summary: dict):
             f"Trend: {summary['regime']['Trend']} · VIX {summary['regime']['India VIX']}\n"
             f"Intraday buy: {', '.join(summary['intraday_buy'])}\nIntraday sell: {', '.join(summary['intraday_sell'])}\n"
             f"Swing buy: {', '.join(summary['swing_buy'])}\nSwing sell: {', '.join(summary['swing_sell'])}\n"
-            f"Long term: {', '.join(summary['longterm'])}\n(Screen only, not advice)")
+            f"Long term: {', '.join(summary['longterm'])}\n"
+            f"20/50 cross UP: {', '.join(summary['cross_bullish']) or '–'}\n"
+            f"20/50 cross DOWN: {', '.join(summary['cross_bearish']) or '–'}\n(Screen only, not advice)")
     requests.post(f"https://api.telegram.org/bot{token}/sendMessage", data={"chat_id": chat, "text": text}, timeout=10)
 
 

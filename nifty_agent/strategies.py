@@ -204,6 +204,69 @@ def longterm_scores(daily, fundamentals=None):
     return d[cols].sort_values("Score", ascending=False)
 
 
+# --------------------------------------------------------------------------- 20/50 crossover
+def crossover_scan(daily):
+    """Find stocks whose 20-day average crossed the 50-day average recently, rank them,
+    and list stocks that are about to cross. Returns (bullish, bearish, approaching)."""
+    kind, f, sl = config.CROSS_MA_TYPE.upper(), config.CROSS_FAST, config.CROSS_SLOW
+    fast_col, slow_col = f"{kind}{f}", f"{kind}{sl}"
+    lb = config.CROSS_LOOKBACK_DAYS
+    cross_rows, near_rows = [], []
+    for t, df in daily.items():
+        if len(df) < sl + 20 or fast_col not in df or not _liquid(df):
+            continue
+        d = (df[fast_col] - df[slow_col]).dropna()
+        sign = np.sign(d)
+        flips = np.where(sign.values[1:] != sign.values[:-1])[0] + 1
+        l = df.iloc[-1]
+        gap = (l[fast_col] / l[slow_col] - 1) * 100
+        base = {"Ticker": t.replace(".NS", ""), f"{kind}{f}": l[fast_col], f"{kind}{sl}": l[slow_col],
+                "Gap %": gap, "RSI": l.RSI}
+        if len(flips) and len(d) - 1 - flips[-1] <= lb:
+            i = flips[-1]
+            day = d.index[i]
+            ago = len(d) - 1 - i
+            bull = d.iloc[-1] > 0
+            side = 1 if bull else -1
+            cross_px = df.loc[day, "Close"]
+            vol_x = df.loc[day, "Volume"] / df.loc[day, "VolAvg20"] if df.loc[day, "VolAvg20"] else 1
+            slope = (l[slow_col] / df[slow_col].iloc[-6] - 1) * 100       # is the 50 turning?
+            st_ok = (l.STdir > 0) == bull
+            above = (l.Close > l[fast_col] > l[slow_col]) if bull else (l.Close < l[fast_col] < l[slow_col])
+            score = ((lb + 1 - ago) / (lb + 1) * 3                        # fresher cross ranks higher
+                     + min(abs(gap), 3)                                    # cleaner separation
+                     + min(vol_x, 3) / 1.5                                 # volume confirmed the cross
+                     + side * np.clip(slope, -1, 1)                        # slow average turning the same way
+                     + (1.5 if st_ok else -1) + (1 if above else 0)
+                     + (0.5 if (bull and 50 <= l.RSI <= 70) or (not bull and 30 <= l.RSI <= 50) else 0))
+            why = [f"crossed {ago} session{'s' if ago != 1 else ''} ago" if ago else "crossed TODAY"]
+            if vol_x > 1.3: why.append(f"{vol_x:.1f}x volume on cross day")
+            if st_ok: why.append(f"SuperTrend agrees ({'Buy' if bull else 'Sell'})")
+            if above: why.append(f"price {'above' if bull else 'below'} both averages")
+            if side * slope > 0: why.append(f"{sl}-day average turning {'up' if bull else 'down'}")
+            stop = min(l[slow_col], l.ST) if bull else max(l[slow_col], l.ST)
+            cross_rows.append({**base, "Cross": "Bullish (20 ↑ 50)" if bull else "Bearish (20 ↓ 50)",
+                               "Cross date": day.strftime("%d %b %Y"), "Days ago": ago,
+                               "Move since cross %": (l.Close / cross_px - 1) * 100, "Vol on cross (x)": vol_x,
+                               "Stop": stop, "Score": round(score, 2), "Reasons": ", ".join(why), "_side": side})
+        elif abs(gap) <= config.CROSS_NEAR_PCT and len(d) > 3:
+            closing_in = abs(d.iloc[-1]) < abs(d.iloc[-4])                 # gap shrinking over 3 sessions
+            if closing_in:
+                near_rows.append({**base, "Watch": "May cross UP (bullish)" if d.iloc[-1] < 0 else "May cross DOWN (bearish)",
+                                  "Gap 3 sessions ago %": (df[fast_col].iloc[-4] / df[slow_col].iloc[-4] - 1) * 100,
+                                  "ST signal": "Buy" if l.STdir > 0 else "Sell"})
+    cr = pd.DataFrame(cross_rows)
+    if cr.empty:
+        bull = bear = cr
+    else:
+        bull = cr[cr._side > 0].sort_values(["Score"], ascending=False).head(config.TOP_N_CROSS).drop(columns="_side")
+        bear = cr[cr._side < 0].sort_values(["Score"], ascending=False).head(config.TOP_N_CROSS).drop(columns="_side")
+    near = pd.DataFrame(near_rows)
+    if not near.empty:
+        near = near.reindex(near["Gap %"].abs().sort_values().index).head(config.TOP_N_CROSS)
+    return bull.reset_index(drop=True), bear.reset_index(drop=True), near.reset_index(drop=True)
+
+
 def split(df: pd.DataFrame, n_buy: int, n_sell: int):
     if df.empty:
         return df, df
