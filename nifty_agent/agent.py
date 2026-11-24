@@ -22,6 +22,7 @@ import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+import numpy as np
 import pandas as pd
 
 import config
@@ -117,13 +118,36 @@ def compute(session: str | None = None, demo=False, fundamentals=False,
     x_bull, x_bear = ((board[qcols].join(x.set_index("Ticker"), how="inner").loc[x.Ticker].reset_index()
                        if not x.empty else x) for x in (x_bull, x_bear))
 
+    # one row per stock with every reading, used by the "Under ₹X" tab
+    allstocks = board[["Sector", "LTP", "LCP", "Open", "Chg %", "2D %", "1W %", "EMA20", "EMA50",
+                       "SuperTrend", "ST signal"]].copy()
+    if not swing.empty:
+        allstocks = allstocks.join(swing.set_index("Ticker")[["Score", "RSI", "Stop", "Target 1"]]
+                                   .rename(columns={"Score": "Swing score", "Stop": "Swing stop",
+                                                    "Target 1": "Swing target"}))
+    if not intra.empty:
+        allstocks = allstocks.join(intra.set_index("Ticker")[["Score"]].rename(columns={"Score": "Intraday score"}))
+    if not lt.empty:
+        allstocks = allstocks.join(lt[["Score", "View"]].rename(columns={"Score": "Long-term score",
+                                                                       "View": "Long-term view"}))
+    xs = pd.concat([x_bull, x_bear]) if not (x_bull.empty and x_bear.empty) else pd.DataFrame()
+    allstocks["20/50 cross"] = (xs.set_index("Ticker")["Cross"] + " · " + xs.set_index("Ticker")["Days ago"].astype(str)
+                                + "d ago").reindex(allstocks.index) if not xs.empty else None
+    if not x_near.empty:
+        allstocks["20/50 cross"] = allstocks["20/50 cross"].fillna(x_near.set_index("Ticker")["Watch"])
+    allstocks["20/50 cross"] = allstocks["20/50 cross"].fillna("–")
+    sw = allstocks.get("Swing score", pd.Series(0, index=allstocks.index)).fillna(0)
+    allstocks["Setup"] = np.where(sw >= 3, "Bullish setup", np.where(sw <= -3, "Bearish setup", "Neutral"))
+    allstocks = allstocks.sort_values(["Swing score"] if "Swing score" in allstocks else ["Chg %"], ascending=False)
+
     sens_view = sens.sort_values("Expected move %")
     movers = pd.concat([sens_view.tail(5)[::-1], sens_view.head(5)])
     movers.index = movers.index.str.replace(".NS", "", regex=False)
     return dict(now=now, session=session, demo=demo, fundamentals=fundamentals, snap=snap,
                 gscore=gscore, glabel=glabel, regime=regime, nvg=nvg, sens=sens, intra=intra,
                 swing=swing, lt=lt, board=board, ib=ib, is_=is_, sb=sb, ss=ss, lt_buy=lt_buy,
-                lt_avoid=lt_avoid, movers=movers, x_bull=x_bull, x_bear=x_bear, x_near=x_near)
+                lt_avoid=lt_avoid, movers=movers, x_bull=x_bull, x_bear=x_bear, x_near=x_near,
+                allstocks=allstocks)
 
 
 def stance(gscore, regime):
@@ -141,6 +165,7 @@ def run(session: str | None, demo=False, fundamentals=False, llm=False, telegram
      lt_buy, lt_avoid, movers, x_bull, x_bear, x_near) = (R[k] for k in ("now", "session", "snap", "gscore",
      "glabel", "regime", "nvg", "sens", "intra", "swing", "lt", "board", "ib", "is_", "sb", "ss", "lt_buy",
      "lt_avoid", "movers", "x_bull", "x_bear", "x_near"))
+    cheap = R["allstocks"][R["allstocks"]["LTP"] < config.PRICE_CAP_INR]
     xname = f"{config.CROSS_MA_TYPE} {config.CROSS_FAST}/{config.CROSS_SLOW}"
 
     # ---------------------------------------------------------------- report
@@ -181,7 +206,10 @@ def run(session: str | None, demo=False, fundamentals=False, llm=False, telegram
             "average and SuperTrend._",
             md(x_bull), f"### {xname} crossover – top {config.TOP_N_CROSS} bearish (20 crossed BELOW 50)", md(x_bear),
             f"### About to cross (averages within {config.CROSS_NEAR_PCT}% and closing in)", md(x_near),
-            "## 6. Price board – Nifty 50 + your extra stocks (sorted by today's change)",
+            f"## 6. Stocks with LTP below ₹{config.PRICE_CAP_INR:,} ({len(cheap)} found)",
+            "_Sorted by swing score. Setup: Bullish ≥ +3, Bearish ≤ −3. Long-term view and 20/50 cross status included._",
+            md(cheap.drop(columns=["LCP"])),
+            "## 7. Price board – Nifty 50 + your extra stocks (sorted by today's change)",
             "_LTP = last traded price · LCP = last (previous) closing price · Chg % vs yesterday's close · "
             "2D % vs close 2 sessions ago · 1W % vs close 5 sessions ago · EMA20/EMA50 = 20/50-day "
             "exponential moving averages · SuperTrend (10, 3) on daily candles: Buy when price is above it._",
@@ -197,7 +225,8 @@ def run(session: str | None, demo=False, fundamentals=False, llm=False, telegram
                "swing_sell": ss.Ticker.tolist() if not ss.empty else [],
                "longterm": lt_buy.index.tolist(),
                "cross_bullish": x_bull.Ticker.tolist() if not x_bull.empty else [],
-               "cross_bearish": x_bear.Ticker.tolist() if not x_bear.empty else []}
+               "cross_bearish": x_bear.Ticker.tolist() if not x_bear.empty else [],
+               f"under_{config.PRICE_CAP_INR}_bullish": cheap[cheap.Setup == "Bullish setup"].index.tolist()}
     if llm:
         out.insert(3, "### AI brief\n" + llm_brief(summary) + "\n")
     out += ["---", DISCLAIMER]
@@ -216,6 +245,7 @@ def run(session: str | None, demo=False, fundamentals=False, llm=False, telegram
             ("Long Term", lt.reset_index()),
             ("20-50 Crossover", pd.concat([x_bull, x_bear], ignore_index=True)),
             ("About to cross", x_near),
+            (f"Under Rs {config.PRICE_CAP_INR}", cheap.reset_index()),
             ("Nifty vs Global", nvg.reset_index()),
             ("Sensitivity", sens.reset_index())])
     with open(stem + ".json", "w") as f:

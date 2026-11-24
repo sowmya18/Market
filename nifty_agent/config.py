@@ -123,6 +123,9 @@ CROSS_LOOKBACK_DAYS = 10       # a cross within this many sessions counts as "re
 CROSS_NEAR_PCT = 1.0           # "about to cross" when the two averages are within this % of each other
 TOP_N_CROSS = 10
 
+# "Under ₹ X" tab: stocks whose LTP is below this price (changeable in the app sidebar)
+PRICE_CAP_INR = 500
+
 TOP_N_BUY = 10
 TOP_N_SELL = 5
 CAPITAL_INR = 100_000      # used only to suggest position size
