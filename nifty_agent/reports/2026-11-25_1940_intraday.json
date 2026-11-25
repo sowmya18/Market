@@ -1,0 +1,90 @@
+{
+  "session": "intraday",
+  "global_score": -0.42,
+  "global_label": "Negative",
+  "regime": {
+    "Nifty": 25819.25,
+    "Nifty 1d %": 1.85,
+    "Trend": "Sideways",
+    "SMA50": 23567.85,
+    "SMA200": 23999.94,
+    "India VIX": 17.7,
+    "Risk": "Normal volatility",
+    "size_mult": 1.0
+  },
+  "top_global": {
+    "S&P fut": -2.11,
+    "Nikkei 225": -2.78,
+    "Hang Seng": -1.14,
+    "USD/INR": -0.75,
+    "Brent crude": -2.41,
+    "Nasdaq fut": -3.31
+  },
+  "intraday_buy": [
+    "HINDUNILVR",
+    "HDFCLIFE",
+    "ITC",
+    "TATACONSUM",
+    "TRENT",
+    "EICHERMOT",
+    "SUNPHARMA",
+    "NESTLEIND",
+    "TCS",
+    "BAJAJ-AUTO"
+  ],
+  "intraday_sell": [
+    "TATASTEEL",
+    "ADANIENT",
+    "HINDALCO",
+    "SHRIRAMFIN",
+    "JIOFIN"
+  ],
+  "swing_buy": [
+    "INDIGO",
+    "EICHERMOT",
+    "ETERNAL",
+    "GRASIM",
+    "BAJFINANCE",
+    "BSE",
+    "AXISBANK",
+    "BAJAJFINSV",
+    "HCLTECH",
+    "APOLLOHOSP"
+  ],
+  "swing_sell": [
+    "TATASTEEL",
+    "COALINDIA",
+    "TMPV",
+    "HINDALCO",
+    "NTPC"
+  ],
+  "longterm": [
+    "APOLLOHOSP",
+    "KOTAKBANK",
+    "BAJAJ-AUTO",
+    "ICICIBANK",
+    "ADANIPORTS",
+    "TECHM",
+    "GRASIM",
+    "BSE",
+    "SUNPHARMA",
+    "TITAN"
+  ],
+  "cross_bullish": [
+    "MAXHEALTH",
+    "HDFCLIFE",
+    "M&M",
+    "BAJFINANCE",
+    "SBIN",
+    "MARUTI",
+    "HDFCBANK",
+    "ASIANPAINT",
+    "AMBUJACEM",
+    "RELIANCE"
+  ],
+  "cross_bearish": [],
+  "under_500_bullish": [
+    "ETERNAL",
+    "ITC"
+  ]
+}
